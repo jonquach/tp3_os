@@ -57,8 +57,9 @@ static WaitList *gpWaitTimerList = NULL;
 static TCB *gThreadTable[MAX_THREADS]; // Utilisé par la fonction ThreadID()
 
 //mes variable
-static lastId = 0;
-static nbThread = 0;
+static int lastId = 0; //Pour quand on cré un nouveau thread ca c'est incrémenté
+static int nbThread = 0; //c'est le nbThread créer (incrémenter quand créer et décrémenté quand thread se termine)
+static TCB *startOfList = NULL;
 
 /* Cette fonction ne fait rien d'autre que de spinner un tour et céder sa place. C'est l'équivalent 
    pour un système de se tourner les pouces. */
@@ -109,21 +110,23 @@ tid ThreadCreer(void (*pFuncThread)(void *), void *arg) {
 	
 	tcb->time_t   WakeupTime; // Instant quand réveiller le thread, s'il dort, en epoch time.
 
-	//if 
-	if ()
-	//relier le dernier maillon au nouveau.
-	tcb->pSuivant = 
-	tcb->pPrecedant = 
+	//Si c'est la premiere fois qu'on cré un thread
+	if (nbThread == 0)
+	  {
+	    tcb->pSuivant = NULL;
+	    tcb->pPrecedant = NULL;
+	    //on save le premier thread à la con dans une variable globale pour le retrouver plus tard
+	    startOfList = tcb; 
+	  }
+	else
+	  {
+	    //Ajouter un maillon au debut de la liste grace au pointeur que g ajouté.
+	    tcb->pSuivant = startOfList->pPrecedent;
+	    tcb->pPrecedant = startOfList->pSuivant;
+	  }
 
-	//save
-	gpThreadCourant = tcb;
+	//struct WaitList    *pWaitListJoinedThreads; //dernier truc que g pas utilisé dans la structure
 
-	struct TCB         *pSuivant;   // Liste doublement chaînée, pour faire un buffer circulaire
-	struct TCB         *pPrecedant; // Liste doublement chaînée, pour faire un buffer circulaire
-	struct WaitList    *pWaitListJoinedThreads;
-
-	//bon quand on a finit d'init la structure  
-	//faut ajouter le tcb a la liste chainée
 	return (tid) 0;
 }
 
