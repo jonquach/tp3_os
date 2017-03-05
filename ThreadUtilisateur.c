@@ -15,6 +15,7 @@
 #include <time.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <valgrind/valgrind.h>
 #include "ThreadUtilisateur.h"
 
 /* Définitions privées, donc pas dans le .h, car l'utilisateur n'a pas besoin de
@@ -27,6 +28,7 @@ typedef enum {
 } EtatThread;
 
 #define TAILLE_PILE 8192   // Taille de la pile utilisée pour les threads
+#define STACK_SIZE TAILLE_PILE
 
 /* Structure de données pour créer une liste chaînée simple sur les threads qui ont fait un join.
    Facultatif */
@@ -133,6 +135,15 @@ int ThreadInit(void){
   tcb->pPrecedant->pSuivant = tcb;
   // tcb->pWaitListJoinedThreads = NULL;
 
+  // Init ucontext
+  getcontext(&tcb->ctx);
+  // Each thread must posses it's own stack
+  char *pile = (char *) malloc(TAILLE_PILE);
+  // Affect new stack to new thread, change ESP register 
+  tcb->ctx.uc_stack.ss_sp = pile;
+  tcb->ctx.uc_stack.ss_size = TAILLE_PILE;
+
+
   // Mark thread 1 as current thread
   gpThreadCourant = tcb;
 
@@ -153,11 +164,20 @@ tid ThreadCreer(void (*pFuncThread)(void *), void *arg) {
   gThreadTable[gNextThreadIDToAllocate] = tcb;
   gNextThreadIDToAllocate += 1;
 
+  //store the VALGRIND_STACK_REGISTER return values
+  // struct TCB *valgrind_ret = malloc(sizeof(struct TCB));
+
   // Init ucontext
   getcontext(&tcb->ctx);
+
   // Each thread must posses it's own stack
   char *pile = (char *) malloc(TAILLE_PILE);
-  // Affect new stack to new thread, change ESP register 
+
+  VALGRIND_STACK_REGISTER(pile, pile + STACK_SIZE);
+  // valgrind stack deregister
+  // VALGRIND_STACK_DEREGISTER(valgrind_ret[i]);
+
+  // Affect new stack to new thread, change ESP register
   tcb->ctx.uc_stack.ss_sp = pile;
   tcb->ctx.uc_stack.ss_size = TAILLE_PILE;
 
