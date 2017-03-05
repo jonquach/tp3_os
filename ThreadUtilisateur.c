@@ -252,7 +252,40 @@ void ThreadCeder(void) {
   // NOTE: Core function, like clock top
 
   // Need to loop through gpWaitTimerList, check if a thread need to be wakeup
+
   // Need garbage collection, with THREAD_TERMINE
+  while (gpNextToExecuteInCircularBuffer->etat == THREAD_TERMINE) {
+
+    printf("\n\n==== ==== ===== ==== === === === === === === ==== \n");
+    printf("ThreadCeder: Garbage collection sur le thread %d\n", gpNextToExecuteInCircularBuffer->id);
+
+    // Save next TCB pointer before free memory
+    struct TCB *pNextExec = gpNextToExecuteInCircularBuffer->pSuivant;
+
+    // Remove from thread table index
+    gThreadTable[gpNextToExecuteInCircularBuffer->id] = NULL;
+
+    // printf("AFTER GTHREAD, BEFORE FREEE\n");
+    // Free ucontext stack
+    free(gpNextToExecuteInCircularBuffer->ctx.uc_stack.ss_sp);
+    // Free WaitList, if pWaitList NULL nothing is performed, cf man free
+    free(gpNextToExecuteInCircularBuffer->pWaitListJoinedThreads);
+
+    // Remove from ring buffer
+    // printf("AFTER FREE, REMOVING FROM RING BUFFER\n");
+    gpNextToExecuteInCircularBuffer->pPrecedant->pSuivant = gpNextToExecuteInCircularBuffer->pSuivant;
+    gpNextToExecuteInCircularBuffer->pSuivant->pPrecedant = gpNextToExecuteInCircularBuffer->pPrecedant;
+    gpNextToExecuteInCircularBuffer->pSuivant = NULL;
+    gpNextToExecuteInCircularBuffer->pPrecedant = NULL;
+    gNumberOfThreadInCircularBuffer -= 1;
+
+    // Destroy the TCB
+    free(gpNextToExecuteInCircularBuffer);
+    // printf("TCB DESTROYED\n");
+
+    // Pass next TCB pointer
+    gpNextToExecuteInCircularBuffer = pNextExec;
+  }
 
 
   WaitList *previousNode = NULL;
