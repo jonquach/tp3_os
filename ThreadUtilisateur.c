@@ -20,10 +20,10 @@
 /* Définitions privées, donc pas dans le .h, car l'utilisateur n'a pas besoin de
    savoir ces détails d'implémentation. OBLIGATOIRE. */
 typedef enum { 
-	THREAD_EXECUTE=0,
-	THREAD_PRET,
-	THREAD_BLOQUE,
-	THREAD_TERMINE
+  THREAD_EXECUTE=0,
+  THREAD_PRET,
+  THREAD_BLOQUE,
+  THREAD_TERMINE
 } EtatThread;
 
 #define TAILLE_PILE 8192   // Taille de la pile utilisée pour les threads
@@ -31,25 +31,25 @@ typedef enum {
 /* Structure de données pour créer une liste chaînée simple sur les threads qui ont fait un join.
    Facultatif */
 typedef struct WaitList {
-	struct TCB *pThreadWaiting;
-	struct WaitList *pNext;
+  struct TCB *pThreadWaiting;
+  struct WaitList *pNext;
 } WaitList;
 
 /* TCB : Thread Control Block. Cette structure de données est utilisée pour stocker l'information
    pour un thread. Elle permet aussi d'implémenter une liste doublement chaînée de TCB, ce qui
    facilite la gestion et permet de faire un ordonnanceur tourniquet sans grand effort.  */
 typedef struct TCB {  // Important d'avoir le nom TCB ici, sinon le compilateur se plaint.
-	tid                 id;        // Numero du thread
-	EtatThread			etat;      // Etat du thread
-	ucontext_t          ctx;       // Endroit où stocker le contexte du thread
-	time_t              WakeupTime; // Instant quand réveiller le thread, s'il dort, en epoch time.
-	struct TCB         *pSuivant;   // Liste doublement chaînée, pour faire un buffer circulaire
-	struct TCB         *pPrecedant; // Liste doublement chaînée, pour faire un buffer circulaire
-	struct WaitList	   *pWaitListJoinedThreads; // Liste chaînée simple des threads en attente.
+  tid                id;        // Numero du thread
+  EtatThread         etat;      // Etat du thread
+  ucontext_t         ctx;       // Endroit où stocker le contexte du thread
+  time_t             WakeupTime; // Instant quand réveiller le thread, s'il dort, en epoch time.
+  struct TCB         *pSuivant;   // Liste doublement chaînée, pour faire un buffer circulaire
+  struct TCB         *pPrecedant; // Liste doublement chaînée, pour faire un buffer circulaire
+  struct WaitList    *pWaitListJoinedThreads; // Liste chaînée simple des threads en attente.
 } TCB;
 
 // Pour que les variables soient absolument cachées à l'utilisateur, on va les déclarer static
-static TCB *gpThreadCourant = NULL;	 // Thread en cours d'execution
+static TCB *gpThreadCourant = NULL;  // Thread en cours d'execution
 static TCB *gpNextToExecuteInCircularBuffer = NULL;
 static int gNumberOfThreadInCircularBuffer = 0;
 static int gNextThreadIDToAllocate = 0;
@@ -61,20 +61,49 @@ static int lastId = 0; //Pour quand on cré un nouveau thread ca c'est incrémen
 static int nbThread = 0; //c'est le nbThread créer (incrémenter quand créer et décrémenté quand thread se termine)
 static TCB *startOfList = NULL;
 
+struct TCB *makeNewTCB() {
+  struct TCB *newTcb = (TCB *) malloc(sizeof(struct TCB));
+
+  newTcb->pSuivant = NULL;
+  newTcb->pPrecedant = NULL;
+
+  return newTcb;
+}
+
+char getStatusToChar(EtatThread status) {
+  char c;
+  switch(status) {
+    case THREAD_EXECUTE:
+      c = 'E';
+      break;
+    case THREAD_PRET:
+      c = 'P';
+      break;
+    case THREAD_BLOQUE:
+      c = 'B';
+      break;
+    case THREAD_TERMINE:
+      c = 'T';
+      break;
+  }
+
+  return c;
+}
+
 /* Cette fonction ne fait rien d'autre que de spinner un tour et céder sa place. C'est l'équivalent 
    pour un système de se tourner les pouces. */
 void IdleThreadFunction(void *arg) {
-	struct timespec SleepTime, TimeRemaining;
-	SleepTime.tv_sec = 0;
-	SleepTime.tv_nsec = 250000000;
-	while (1) {
-		printf("                #########  Idle Thread 0 s'exécute et va prendre une pose de 250 ms... #######\n");
-		/* On va dormir un peu, pour ne pas surcharger inutilement le processus/l'affichage. Dans un
-		   vrai système d'exploitation, s'il n'y a pas d'autres threads d'actifs, ce thread demanderait au
-		   CPU de faire une pause, car il n'y a rien à faire. */ 		
-	    nanosleep(&SleepTime,&TimeRemaining); // nanosleep interfere moins avec les alarmes.
-		ThreadCeder();
-	}
+  struct timespec SleepTime, TimeRemaining;
+  SleepTime.tv_sec = 0;
+  SleepTime.tv_nsec = 250000000;
+  while (1) {
+    printf("                #########  Idle Thread 0 s'exécute et va prendre une pose de 250 ms... #######\n");
+    /* On va dormir un peu, pour ne pas surcharger inutilement le processus/l'affichage. Dans un
+       vrai système d'exploitation, s'il n'y a pas d'autres threads d'actifs, ce thread demanderait au
+       CPU de faire une pause, car il n'y a rien à faire. */    
+      nanosleep(&SleepTime,&TimeRemaining); // nanosleep interfere moins avec les alarmes.
+    ThreadCeder();
+  }
 }
 
 
@@ -83,9 +112,30 @@ void IdleThreadFunction(void *arg) {
    ******************************************************************************************/
 int ThreadInit(void){
   printf("\n  ******************************** ThreadInit()  ******************************** \n");
-  
-  TCB *tcb = malloc(typeof(TCB));
-  IdleThreadFunction((void *) tcb);
+
+  // Idle thread, id 0;
+  ThreadCreer(*IdleThreadFunction, 0);
+
+  // Should be thread 1, main thread here
+  struct TCB *tcb = (TCB *) malloc(sizeof(struct TCB));
+
+  tcb->id = gNextThreadIDToAllocate;
+  // tcb->etat = THREAD_PRET;
+  // tcb->ctx = NULL;
+  // tcb->WakupTime
+  gThreadTable[gNextThreadIDToAllocate] = tcb;
+  gNextThreadIDToAllocate += 1;
+
+  // Link thread 0 and thread 1 to ring buffer
+  tcb->pSuivant = gThreadTable[0];
+  tcb->pPrecedant = gThreadTable[0];
+  tcb->pSuivant->pPrecedant = tcb;
+  tcb->pPrecedant->pSuivant = tcb;
+  tcb->pWaitListJoinedThreads = NULL;
+
+  // Mark thread 1 as current thread
+  gpThreadCourant = tcb;
+
   return 0;
 }
 
@@ -94,48 +144,115 @@ int ThreadInit(void){
                                    T h r e a d C r e e r
    ******************************************************************************************/
 tid ThreadCreer(void (*pFuncThread)(void *), void *arg) {
-	printf("\n  ******************************** ThreadCreer(%p,%p) ******************************** \n",pFuncThread,arg);
-	TCB *tcb = malloc(typeof(TCB));
+  printf("\n  ******************************** ThreadCreer(%p,%p) ******************************** \n",pFuncThread,arg);
 
-	getcontext(&tcb.ctx);
-	char *pile = malloc(TAILLE_PILE);
-	tcb->ctx.uc_stack.ss_sp = pile;
-	TCB->ctx.uc_stack.ss_size = TAILLE_PILE;
-	makecontext(&tcb.ctx, (void *)pFuncThread, 1, pArg);
+  struct TCB *tcb = (TCB *) malloc(sizeof(struct TCB));
 
+  tcb->id = gNextThreadIDToAllocate;
+  tcb->pWaitListJoinedThreads = NULL;
+  gThreadTable[gNextThreadIDToAllocate] = tcb;
+  gNextThreadIDToAllocate += 1;
 
-	lastId = lastId + 1;
-	tcb->tid = lastId;        // Numero du thread
-	tcb->EtatThread = THREAD_PRET;      // Etat du thread
-	
-	tcb->time_t   WakeupTime; // Instant quand réveiller le thread, s'il dort, en epoch time.
+  // Init ucontext
+  getcontext(&tcb->ctx);
+  // Each thread must posses it's own stack
+  char *pile = (char *) malloc(TAILLE_PILE);
+  // Affect new stack to new thread, change ESP register 
+  tcb->ctx.uc_stack.ss_sp = pile;
+  tcb->ctx.uc_stack.ss_size = TAILLE_PILE;
 
-	//Si c'est la premiere fois qu'on cré un thread
-	if (nbThread == 0)
-	  {
-	    tcb->pSuivant = NULL;
-	    tcb->pPrecedant = NULL;
-	    //on save le premier thread à la con dans une variable globale pour le retrouver plus tard
-	    startOfList = tcb; 
-	  }
-	else
-	  {
-	    //Ajouter un maillon au debut de la liste grace au pointeur que g ajouté.
-	    tcb->pSuivant = startOfList->pPrecedent;
-	    tcb->pPrecedant = startOfList->pSuivant;
-	  }
+  // Affect function to context for when needed
+  makecontext(&tcb->ctx, (void *)pFuncThread, 1, arg);
 
-	//struct WaitList    *pWaitListJoinedThreads; //dernier truc que g pas utilisé dans la structure
+  // Insert in ring buffer
 
-	return (tid) 0;
+  // printf("tcb id %d\n", tcb->id);
+  // if very first
+  if (tcb->id == 0) {
+    tcb->pSuivant = NULL;
+    tcb->pPrecedant = NULL;
+  } else {
+    tcb->pSuivant = gpThreadCourant->pSuivant;
+    tcb->pPrecedant = gpThreadCourant;
+    tcb->pSuivant->pPrecedant = tcb;
+    tcb->pPrecedant->pSuivant = tcb;
+  }
+
+  gNumberOfThreadInCircularBuffer += 1;
+  gpNextToExecuteInCircularBuffer = tcb;
+
+  // Thread ready
+  tcb->etat = THREAD_PRET;
+
+  return tcb->id;
 }
 
 /* ****************************************************************************************** 
                                    T h r e a d C e d e r
    ******************************************************************************************/
-void ThreadCeder(void){
+void ThreadCeder(void) {
   printf("\n  ******************************** ThreadCeder()  ******************************** \n");
-  
+
+  // Print scheduler status
+  printf("----- Etat de l'ordonnanceur avec %d threads -----\n", gNumberOfThreadInCircularBuffer);
+
+  struct TCB *end = gpNextToExecuteInCircularBuffer->pPrecedant;
+  struct TCB *start = gpNextToExecuteInCircularBuffer;
+
+  // printf("end id %d\n", end->id);
+  // printf("start id %d\n", start->id);
+
+  for (; start != end; start = start->pSuivant) {
+    if (start == gpNextToExecuteInCircularBuffer) {
+      printf("|\tprochain->ThreadID:%d\tÉtat:%c\tWaitList", start->id, getStatusToChar(start->etat));
+    }
+    else if (start->id == 0) {
+      printf("|\t\t  ThreadID:%d\tÉtat:%c\t**Special Idle Thread*\tWaitList",
+             start->id, getStatusToChar(start->etat));
+    }
+    else {
+      printf("|\t\t  ThreadID:%d\tÉtat:%c\tWaitList", start->id, getStatusToChar(start->etat));
+    }
+
+    if (start->pWaitListJoinedThreads != NULL) {
+      for (struct WaitList *waitList = start->pWaitListJoinedThreads;
+           waitList != NULL; waitList = waitList->pNext) {
+        printf("-->(%d)", waitList->pThreadWaiting->id);
+      }
+      // printf("-->() // NOTE: TO BE IMPLEMENTED");
+    }
+
+    printf("\n");
+  }
+
+  printf("----- Liste des threads qui dorment, epoch time=%d -----\n", (int) time(NULL));
+  printf("-------------------------------------------------\n");
+  // NOTE: Core function, like clock top
+
+  // Need to loop through gpWaitTimerList, check if a thread need to be wakeup
+  // Need garbage collection, with THREAD_TERMINER
+
+  // Select next thread to be executed
+  // swapcontext(ucontext_t *oucp, const ucontext_t *ucp);
+
+  TCB *oucp = gpThreadCourant;
+
+  if (oucp->etat == THREAD_EXECUTE)
+    oucp->etat = THREAD_PRET;
+
+
+  // Search next thread ready to be executed
+  for (;gpNextToExecuteInCircularBuffer->etat != THREAD_PRET;
+        gpNextToExecuteInCircularBuffer = gpNextToExecuteInCircularBuffer->pSuivant);
+
+  // Mark as executed before swapping context
+  gpNextToExecuteInCircularBuffer->etat = THREAD_EXECUTE;
+  gpThreadCourant = gpNextToExecuteInCircularBuffer;
+
+  // Reposition next to be executed
+  gpNextToExecuteInCircularBuffer = gpThreadCourant->pSuivant;
+
+  swapcontext(&oucp->ctx, &gpThreadCourant->ctx);
 }
 
 
@@ -143,9 +260,36 @@ void ThreadCeder(void){
                                    T h r e a d J o i n d r e
    ******************************************************************************************/
 int ThreadJoindre(tid ThreadID){
-	printf("\n  ******************************** ThreadJoindre(%d)  ******************************* \n",ThreadID);
+  printf("\n  ******************************** ThreadJoindre(%d)  ******************************* \n",ThreadID);
 
-	return 0;
+  TCB *tcbToJoin = gThreadTable[(unsigned int)ThreadID];
+
+  // printf("blah id %d\n", ThreadID);
+  // printf("tcbToJoin id %d\n", tcbToJoin->id);
+
+  // Mark current thread as blocked
+  gpThreadCourant->etat = THREAD_BLOQUE;
+  
+  // Remove from ring buffer
+  // gpThreadCourant->pSuivant->pPrecedant = gpThreadCourant->pPrecedant;
+  // gpThreadCourant->pPrecedant->pSuivant = gpThreadCourant->pSuivant;
+  // gpThreadCourant->pSuivant = NULL;
+  // gpThreadCourant->pPrecedant = NULL;
+  // gNumberOfThreadInCircularBuffer -= 1;
+
+  // New item in wait list
+  WaitList *newWaitList = (WaitList *) malloc(sizeof(struct WaitList));
+
+  newWaitList->pThreadWaiting = gpThreadCourant;
+  newWaitList->pNext = NULL;
+
+  // Add waiting list on tcb to be joined with
+  tcbToJoin->pWaitListJoinedThreads = newWaitList;
+
+  // Exec another thread
+  ThreadCeder();
+
+  return 1;
 }
 
 
@@ -153,26 +297,26 @@ int ThreadJoindre(tid ThreadID){
                                    T h r e a d Q u i t t e r
    ******************************************************************************************/
 void ThreadQuitter(void){
-	printf("  ******************************** ThreadQuitter(%d)  ******************************** \n",gpThreadCourant->id);
+  printf("  ******************************** ThreadQuitter(%d)  ******************************** \n",gpThreadCourant->id);
 
-	// On passe au thread suivant
-	ThreadCeder();
-	printf(" ThreadQuitter:Je ne devrais jamais m'exectuer! Si je m'exécute, vous avez un bug!\n");
-	return;
+  // On passe au thread suivant
+  ThreadCeder();
+  printf(" ThreadQuitter:Je ne devrais jamais m'exectuer! Si je m'exécute, vous avez un bug!\n");
+  return;
 }
 
 /* ****************************************************************************************** 
                                    T h r e a d I d
    ******************************************************************************************/
 tid ThreadId(void) {
-	// Libre à vous de la modifier. Mais c'est ce que j'ai fait dans mon code, en toute simplicité.
-	return gpThreadCourant->id;
+  // Libre à vous de la modifier. Mais c'est ce que j'ai fait dans mon code, en toute simplicité.
+  return gpThreadCourant->id;
 }
 
 /* ****************************************************************************************** 
                                    T h r e a d D o r m i r
    ******************************************************************************************/
 void ThreadDormir(int secondes) {
-	printf("\n  ******************************** ThreadDormir(%d)  ******************************** \n",secondes);
+  printf("\n  ******************************** ThreadDormir(%d)  ******************************** \n",secondes);
 }
 
