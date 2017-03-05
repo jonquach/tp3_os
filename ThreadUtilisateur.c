@@ -131,7 +131,7 @@ int ThreadInit(void){
   tcb->pPrecedant = gThreadTable[0];
   tcb->pSuivant->pPrecedant = tcb;
   tcb->pPrecedant->pSuivant = tcb;
-  tcb->pWaitListJoinedThreads = NULL;
+  // tcb->pWaitListJoinedThreads = NULL;
 
   // Mark thread 1 as current thread
   gpThreadCourant = tcb;
@@ -179,6 +179,7 @@ tid ThreadCreer(void (*pFuncThread)(void *), void *arg) {
   }
 
   gNumberOfThreadInCircularBuffer += 1;
+  printf("gNumberOfThreadInCircularBuffer %d\n", gNumberOfThreadInCircularBuffer);
   gpNextToExecuteInCircularBuffer = tcb;
 
   // Thread ready
@@ -196,13 +197,12 @@ void ThreadCeder(void) {
   // Print scheduler status
   printf("----- Etat de l'ordonnanceur avec %d threads -----\n", gNumberOfThreadInCircularBuffer);
 
-  struct TCB *end = gpNextToExecuteInCircularBuffer->pPrecedant;
+  // struct TCB *end = gpNextToExecuteInCircularBuffer->pPrecedant;
   struct TCB *start = gpNextToExecuteInCircularBuffer;
 
   // printf("end id %d\n", end->id);
   // printf("start id %d\n", start->id);
-
-  for (; start != end; start = start->pSuivant) {
+  for (int i = 0; i < gNumberOfThreadInCircularBuffer; ++i) {
     if (start == gpNextToExecuteInCircularBuffer) {
       printf("|\tprochain->ThreadID:%d\tÉtat:%c\tWaitList", start->id, getStatusToChar(start->etat));
     }
@@ -223,6 +223,8 @@ void ThreadCeder(void) {
     }
 
     printf("\n");
+    start = start->pSuivant;
+    // i++;
   }
 
   printf("----- Liste des threads qui dorment, epoch time=%d -----\n", (int) time(NULL));
@@ -230,16 +232,18 @@ void ThreadCeder(void) {
   // NOTE: Core function, like clock top
 
   // Need to loop through gpWaitTimerList, check if a thread need to be wakeup
-  // Need garbage collection, with THREAD_TERMINER
+  // Need garbage collection, with THREAD_TERMINE
 
   // Select next thread to be executed
   // swapcontext(ucontext_t *oucp, const ucontext_t *ucp);
 
   TCB *oucp = gpThreadCourant;
 
+  printf("gpThreadCourant id == %d\n", gpThreadCourant->id);
+  printf("gpThreadCourant status == %c\n", getStatusToChar(gpThreadCourant->etat));
+
   if (oucp->etat == THREAD_EXECUTE)
     oucp->etat = THREAD_PRET;
-
 
   // Search next thread ready to be executed
   for (;gpNextToExecuteInCircularBuffer->etat != THREAD_PRET;
@@ -248,6 +252,10 @@ void ThreadCeder(void) {
   // Mark as executed before swapping context
   gpNextToExecuteInCircularBuffer->etat = THREAD_EXECUTE;
   gpThreadCourant = gpNextToExecuteInCircularBuffer;
+
+  printf("========\n");
+  printf("gpThreadCourant id == %d\n", gpThreadCourant->id);
+  printf("gpThreadCourant status == %c\n", getStatusToChar(gpThreadCourant->etat));
 
   // Reposition next to be executed
   gpNextToExecuteInCircularBuffer = gpThreadCourant->pSuivant;
@@ -264,24 +272,29 @@ int ThreadJoindre(tid ThreadID){
 
   TCB *tcbToJoin = gThreadTable[(unsigned int)ThreadID];
 
+  if (tcbToJoin == NULL || tcbToJoin->etat == THREAD_TERMINE) {
+    printf("SOMETHING TERRIBLE IS GOING ON\n");
+  }
+
   // printf("blah id %d\n", ThreadID);
-  // printf("tcbToJoin id %d\n", tcbToJoin->id);
+  printf("tcbToJoin id %d\n", tcbToJoin->id);
+  printf("gpThreadCourant id == %d\n", gpThreadCourant->id);
 
   // Mark current thread as blocked
   gpThreadCourant->etat = THREAD_BLOQUE;
   
   // Remove from ring buffer
-  // gpThreadCourant->pSuivant->pPrecedant = gpThreadCourant->pPrecedant;
-  // gpThreadCourant->pPrecedant->pSuivant = gpThreadCourant->pSuivant;
-  // gpThreadCourant->pSuivant = NULL;
-  // gpThreadCourant->pPrecedant = NULL;
+  gpThreadCourant->pPrecedant->pSuivant = gpThreadCourant->pSuivant;
+  gpThreadCourant->pSuivant->pPrecedant = gpThreadCourant->pPrecedant;
+  gpThreadCourant->pSuivant = NULL;
+  gpThreadCourant->pPrecedant = NULL;
   // gNumberOfThreadInCircularBuffer -= 1;
 
   // New item in wait list
   WaitList *newWaitList = (WaitList *) malloc(sizeof(struct WaitList));
 
   newWaitList->pThreadWaiting = gpThreadCourant;
-  newWaitList->pNext = NULL;
+  newWaitList->pNext = tcbToJoin->pWaitListJoinedThreads;
 
   // Add waiting list on tcb to be joined with
   tcbToJoin->pWaitListJoinedThreads = newWaitList;
@@ -299,7 +312,29 @@ int ThreadJoindre(tid ThreadID){
 void ThreadQuitter(void){
   printf("  ******************************** ThreadQuitter(%d)  ******************************** \n",gpThreadCourant->id);
 
-  // On passe au thread suivant
+  if (gpThreadCourant->pWaitListJoinedThreads != NULL) {
+    for (;gpThreadCourant->pWaitListJoinedThreads != NULL;
+          gpThreadCourant->pWaitListJoinedThreads = gpThreadCourant->pWaitListJoinedThreads->pNext) {
+
+      struct TCB *pThreadWaiting = gpThreadCourant->pWaitListJoinedThreads->pThreadWaiting;
+      printf("ThreadQuitter: je reveille le thread %d\n",
+             pThreadWaiting->id);
+
+      // Add to ring buffer
+      pThreadWaiting->pSuivant = gpThreadCourant->pSuivant;
+      pThreadWaiting->pPrecedant = gpThreadCourant;
+      pThreadWaiting->pSuivant->pPrecedant = pThreadWaiting;
+      pThreadWaiting->pPrecedant->pSuivant = pThreadWaiting;
+      // gNumberOfThreadInCircularBuffer += 1;
+      gpNextToExecuteInCircularBuffer = pThreadWaiting;
+      pThreadWaiting->etat = THREAD_PRET;
+    }
+  }
+
+  gpThreadCourant->pWaitListJoinedThreads = NULL;
+  gpThreadCourant->etat = THREAD_TERMINE;
+
+  // Go to next thread
   ThreadCeder();
   printf(" ThreadQuitter:Je ne devrais jamais m'exectuer! Si je m'exécute, vous avez un bug!\n");
   return;
