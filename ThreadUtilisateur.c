@@ -59,9 +59,8 @@ static WaitList *gpWaitTimerList = NULL;
 static TCB *gThreadTable[MAX_THREADS]; // Utilisé par la fonction ThreadID()
 
 //mes variable
-static int lastId = 0; //Pour quand on cré un nouveau thread ca c'est incrémenté
-static int nbThread = 0; //c'est le nbThread créer (incrémenter quand créer et décrémenté quand thread se termine)
-static TCB *startOfList = NULL;
+static WaitList *gpLastWaitTimerList = NULL;
+
 
 struct TCB *makeNewTCB() {
   struct TCB *newTcb = (TCB *) malloc(sizeof(struct TCB));
@@ -255,6 +254,54 @@ void ThreadCeder(void) {
   // Need to loop through gpWaitTimerList, check if a thread need to be wakeup
   // Need garbage collection, with THREAD_TERMINE
 
+
+  WaitList *previousNode = NULL;
+  //on parcour la liste de threads qui wait et on les affichent
+  WaitList *cur = gpWaitTimerList;
+  for (; cur->pNext != NULL; cur = cur->pNext)
+  {
+
+	  printf("/t/t  ThreadID:%d/tÉtat:%c/tWakeTime=%d  WaitList", cur->pThreadWaiting->id, getStatusToChar(cur->pThreadWaiting->etat), cur->pThreadWaiting->WakeupTime);
+	  if (start->pWaitListJoinedThreads != NULL) {
+	        for (struct WaitList *waitList = start->pWaitListJoinedThreads;
+	             waitList != NULL; waitList = waitList->pNext) {
+	          printf("-->(%d)", waitList->pThreadWaiting->id);
+	        }
+	  }
+	  printf("\n");
+
+	  //vérification de si il est pret a etre réveillé
+	  if (time(NULL) >= cur->pThreadWaiting->WakeupTime) {
+		  //on ajoute le noeud apres l'actuel.
+		  TCB *next = gpThreadCourant->pSuivant;
+		  next->pPrecedant = cur->pThreadWaiting;
+		  gpThreadCourant->pSuivant = cur->pThreadWaiting;
+		  cur->pThreadWaiting->pSuivant = next;
+		  cur->pThreadWaiting->pPrecedant = gpThreadCourant;
+
+		  //on le vire de la liste des waitings
+		  if (previousNode == NULL)//si c le 1 node
+		  {
+			  if (gpWaitTimerList->pNext == NULL)// si y a que 1 node
+			  {
+				  gpWaitTimerList = NULL;
+			  }
+			  else
+			  {
+				  gpWaitTimerList = gpWaitTimerList->pNext;
+			  }
+		  }
+		  else
+		  {
+			  previousNode->pNext = cur->pNext; //on bind le previous au suivant
+		  }
+
+	  }
+	  previousNode = cur;
+  }
+
+
+
   // Select next thread to be executed
   // swapcontext(ucontext_t *oucp, const ucontext_t *ucp);
 
@@ -373,6 +420,48 @@ tid ThreadId(void) {
                                    T h r e a d D o r m i r
    ******************************************************************************************/
 void ThreadDormir(int secondes) {
+
   printf("\n  ******************************** ThreadDormir(%d)  ******************************** \n",secondes);
+  TCB *next;
+  TCB *previous;
+
+  gpThreadCourant->etat = THREAD_BLOQUE;
+  if (gpWaitTimerList == NULL)
+  {
+	  gpWaitTimerList = malloc(1 * sizeof(WaitList));
+
+	  gpWaitTimerList->pThreadWaiting = gpThreadCourant;
+	  gpWaitTimerList->pNext = NULL;
+	  gpLastWaitTimerList = gpWaitTimerList; //on met un pointeur sur le derniere elem de la liste car g la flemme de faire une boucle
+  }
+  else
+  {
+	  //On remplit le nouveau maillon
+	  WaitList *newElem = malloc(1 * sizeof(WaitList));
+	  newElem->pThreadWaiting = gpThreadCourant;
+	  newElem->pNext = NULL;
+
+	  //On set le dernier maillon de la liste sur le nouveau
+	  gpLastWaitTimerList->pNext = newElem;
+
+	  //on set le pointeur sur le dernier maillon (qui est le nouveau qu'on vient d'ajouter)
+	  gpLastWaitTimerList = newElem;
+  }
+
+  //on recupere les 2 noeuds avant et apres l'actuel
+  next = gpThreadCourant->pSuivant;
+  previous = gpThreadCourant->pPrecedant;
+
+  //on bind les 2 ensemble
+  next->pPrecedant = previous;
+  previous->pSuivant = next;
+
+  //on défonce le noeud actuel
+  gpThreadCourant->pPrecedant = NULL;
+  gpThreadCourant->pSuivant = NULL;
+
+  gpThreadCourant->WakeupTime = time(NULL) + secondes;
+
+  //changer le threaCourant au suivant.
 }
 
