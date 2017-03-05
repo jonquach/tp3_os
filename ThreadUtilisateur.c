@@ -143,6 +143,7 @@ int ThreadInit(void){
   tcb->ctx.uc_stack.ss_sp = pile;
   tcb->ctx.uc_stack.ss_size = TAILLE_PILE;
 
+  gNumberOfThreadInCircularBuffer += 1;
 
   // Mark thread 1 as current thread
   gpThreadCourant = tcb;
@@ -308,7 +309,7 @@ int ThreadJoindre(tid ThreadID){
   gpThreadCourant->pSuivant->pPrecedant = gpThreadCourant->pPrecedant;
   gpThreadCourant->pSuivant = NULL;
   gpThreadCourant->pPrecedant = NULL;
-  // gNumberOfThreadInCircularBuffer -= 1;
+  gNumberOfThreadInCircularBuffer -= 1;
 
   // New item in wait list
   WaitList *newWaitList = (WaitList *) malloc(sizeof(struct WaitList));
@@ -345,7 +346,7 @@ void ThreadQuitter(void){
       pThreadWaiting->pPrecedant = gpThreadCourant;
       pThreadWaiting->pSuivant->pPrecedant = pThreadWaiting;
       pThreadWaiting->pPrecedant->pSuivant = pThreadWaiting;
-      // gNumberOfThreadInCircularBuffer += 1;
+      gNumberOfThreadInCircularBuffer += 1;
       gpNextToExecuteInCircularBuffer = pThreadWaiting;
       pThreadWaiting->etat = THREAD_PRET;
     }
