@@ -198,7 +198,7 @@ void ThreadCeder(void) {
       printf("|\tprochain->ThreadID:%d\tÉtat:%c\tWaitList", start->id, getStatusToChar(start->etat));
     }
     else if (start->id == 0) {
-      printf("|\t\t  ThreadID:%d\tÉtat:%c\t**Special Idle Thread*\tWaitList",
+      printf("|\t\t  ThreadID:%d\tÉtat:%c\t*Special Idle Thread*\tWaitList",
              start->id, getStatusToChar(start->etat));
     }
     else {
