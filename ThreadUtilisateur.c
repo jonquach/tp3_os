@@ -222,7 +222,7 @@ void ThreadCeder(void) {
   struct WaitList *cur = gpWaitTimerList;
   for (; cur != NULL; cur = cur->pNext) {
 
-    printf("\t\t  ThreadID:%d\tÉtat:%c\tWakeTime=%d  WaitList", cur->pThreadWaiting->id,
+    printf("|\t\t  ThreadID:%d\tÉtat:%c\tWakeTime=%d  WaitList", cur->pThreadWaiting->id,
            getStatusToChar(cur->pThreadWaiting->etat), (int) cur->pThreadWaiting->WakeupTime);
 
     if (cur->pThreadWaiting->pWaitListJoinedThreads != NULL) {
