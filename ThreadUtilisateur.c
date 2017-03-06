@@ -269,19 +269,13 @@ void ThreadCeder(void) {
   }
 
   struct WaitList *previousNode = NULL;
-  cur = gpWaitTimerList;
+  struct WaitList *current = gpWaitTimerList;
 
-  while (cur != NULL) {
+  while (current != NULL) {
     //vérification de si il est pret a etre réveillé
-    if (time(NULL) >= cur->pThreadWaiting->WakeupTime) {
+    if (current->pThreadWaiting->WakeupTime <= time(NULL)) {
       printf("-=-=--=-=_#_+_=-=-+_#+_---> THREAD %d with time %d must be wakeup\n",
-             cur->pThreadWaiting->id, (int) cur->pThreadWaiting->WakeupTime);
-      //on ajoute le noeud apres l'actuel.
-      // struct TCB *next = gpThreadCourant->pSuivant;
-      // next->pPrecedant = cur->pThreadWaiting;
-      // gpThreadCourant->pSuivant = cur->pThreadWaiting;
-      // cur->pThreadWaiting->pSuivant = next;
-      // cur->pThreadWaiting->pPrecedant = gpThreadCourant;
+             current->pThreadWaiting->id, (int) current->pThreadWaiting->WakeupTime);
 
       //on le vire de la liste des waitings
       if (previousNode == NULL) { //si c le 1 node
@@ -289,22 +283,23 @@ void ThreadCeder(void) {
         gpWaitTimerList = gpWaitTimerList->pNext;
       } else {
         printf("previousNode != NULL\n");
-        previousNode->pNext = cur->pNext; //on bind le previous au suivant
+        printf("prev next id -> %d\n", previousNode->pNext->pThreadWaiting->id);
+          previousNode->pNext = current->pNext; //on bind le previous au suivant
       }
 
 
-      printf("REMOVING THREAD %d FROM WAITLIST\n", cur->pThreadWaiting->id);
+      printf("REMOVING THREAD %d FROM WAITLIST\n", current->pThreadWaiting->id);
   printf("----- Liste des threads qui dorment, epoch time=%d -----\n", (int) time(NULL));
 
   // Need to loop through gpWaitTimerList, check if a thread need to be wakeup
-  struct WaitList *cur2 = gpWaitTimerList;
-  for (; cur2 != NULL; cur2 = cur2->pNext) {
+  struct WaitList *current2 = gpWaitTimerList;
+  for (; current2 != NULL; current2 = current2->pNext) {
 
-    printf("\t\t  ThreadID:%d\tÉtat:%c\tWakeTime=%d  WaitList", cur2->pThreadWaiting->id,
-           getStatusToChar(cur2->pThreadWaiting->etat), (int) cur2->pThreadWaiting->WakeupTime);
+    printf("\t\t  ThreadID:%d\tÉtat:%c\tWakeTime=%d  WaitList", current2->pThreadWaiting->id,
+           getStatusToChar(current2->pThreadWaiting->etat), (int) current2->pThreadWaiting->WakeupTime);
 
-    if (cur2->pThreadWaiting->pWaitListJoinedThreads != NULL) {
-          for (struct WaitList *waitList = cur2->pThreadWaiting->pWaitListJoinedThreads;
+    if (current2->pThreadWaiting->pWaitListJoinedThreads != NULL) {
+          for (struct WaitList *waitList = current2->pThreadWaiting->pWaitListJoinedThreads;
                waitList != NULL; waitList = waitList->pNext) {
             printf("-->(%d)", waitList->pThreadWaiting->id);
           }
@@ -312,19 +307,19 @@ void ThreadCeder(void) {
     printf("\n");
   }
 
-  printf("ADDING THREAD %d to ring buffer\n", cur->pThreadWaiting->id);
+  printf("ADDING THREAD %d to ring buffer\n", current->pThreadWaiting->id);
       // Add to ring buffer
-      cur->pThreadWaiting->pSuivant = gpThreadCourant->pSuivant;
-      cur->pThreadWaiting->pPrecedant = gpThreadCourant;
-      cur->pThreadWaiting->pSuivant->pPrecedant = cur->pThreadWaiting;
-      cur->pThreadWaiting->pPrecedant->pSuivant = cur->pThreadWaiting;
+      current->pThreadWaiting->pSuivant = gpThreadCourant->pSuivant;
+      current->pThreadWaiting->pPrecedant = gpThreadCourant;
+      current->pThreadWaiting->pSuivant->pPrecedant = current->pThreadWaiting;
+      current->pThreadWaiting->pPrecedant->pSuivant = current->pThreadWaiting;
       gNumberOfThreadInCircularBuffer += 1;
-      gpNextToExecuteInCircularBuffer = cur->pThreadWaiting;
-      cur->pThreadWaiting->etat = THREAD_PRET;
+      gpNextToExecuteInCircularBuffer = current->pThreadWaiting;
+      current->pThreadWaiting->etat = THREAD_PRET;
     }
 
-    previousNode = cur;
-    cur = cur->pNext;
+    previousNode = current;
+    current = current->pNext;
   }
 
   if (gpWaitTimerList == NULL) {
@@ -497,12 +492,19 @@ void ThreadDormir(int secondes) {
 
   printf("----- Liste des threads qui dorment, epoch time=%d -----\n", (int) time(NULL));
 
+  int i = 0;
   // Need to loop through gpWaitTimerList, check if a thread need to be wakeup
   struct WaitList *cur2 = gpWaitTimerList;
   for (; cur2 != NULL; cur2 = cur2->pNext) {
 
     printf("\t\t  ThreadID:%d\tÉtat:%c\tWakeTime=%d  WaitList", cur2->pThreadWaiting->id,
            getStatusToChar(cur2->pThreadWaiting->etat), (int) cur2->pThreadWaiting->WakeupTime);
+
+    if (cur2->pThreadWaiting->id == gpThreadCourant->id) {
+        cur2->pThreadWaiting->WakeupTime = time(NULL) + secondes;
+        printf("\n\n\nALREADY IN LIST\n\n\n");
+        i = 1;
+    }
 
     if (cur2->pThreadWaiting->pWaitListJoinedThreads != NULL) {
           for (struct WaitList *waitList = cur2->pThreadWaiting->pWaitListJoinedThreads;
@@ -514,13 +516,18 @@ void ThreadDormir(int secondes) {
   }
 
   gpThreadCourant->etat = THREAD_BLOQUE;
-  //On remplit le nouveau maillon
-  WaitList *newElem = malloc(sizeof(struct WaitList));
-  newElem->pThreadWaiting = gpThreadCourant;
-  newElem->pNext = gpWaitTimerList;
 
-  //on set le pointeur sur le dernier maillon (qui est le nouveau qu'on vient d'ajouter)
-  gpWaitTimerList = newElem;
+  if (i == 0 ) {
+    //On remplit le nouveau maillon
+    WaitList *newElem = malloc(sizeof(struct WaitList));
+    newElem->pThreadWaiting = gpThreadCourant;
+    newElem->pNext = gpWaitTimerList;
+
+    gpThreadCourant->WakeupTime = time(NULL) + secondes;
+
+    //on set le pointeur sur le dernier maillon (qui est le nouveau qu'on vient d'ajouter)
+    gpWaitTimerList = newElem;
+  }
 
   // Remove from ring buffer
   gpThreadCourant->pPrecedant->pSuivant = gpThreadCourant->pSuivant;
@@ -529,7 +536,6 @@ void ThreadDormir(int secondes) {
   gpThreadCourant->pPrecedant = NULL;
   gNumberOfThreadInCircularBuffer -= 1;
 
-  gpThreadCourant->WakeupTime = time(NULL) + secondes;
 
   printf("----- Liste des threads qui dorment, epoch time=%d -----\n", (int) time(NULL));
 
