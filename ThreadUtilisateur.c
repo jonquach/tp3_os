@@ -195,7 +195,12 @@ void ThreadCeder(void) {
 
   for (int i = 0; i < gNumberOfThreadInCircularBuffer; ++i) {
     if (start == gpNextToExecuteInCircularBuffer) {
-      printf("|\tprochain->ThreadID:%d\tÉtat:%c\tWaitList", start->id, getStatusToChar(start->etat));
+      if (start->id == 0) {
+        printf("|\t\tprochain->ThreadID:%d\tÉtat:%c\t*Special Idle Thread*\tWaitList",
+               start->id, getStatusToChar(start->etat));
+      } else {
+        printf("|\tprochain->ThreadID:%d\tÉtat:%c\tWaitList", start->id, getStatusToChar(start->etat));
+      }
     }
     else if (start->id == 0) {
       printf("|\t\t  ThreadID:%d\tÉtat:%c\t*Special Idle Thread*\tWaitList",
